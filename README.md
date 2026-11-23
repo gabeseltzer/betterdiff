@@ -3,6 +3,9 @@
 A sidebar for the git diffs you look at all day, opened one file at a time in VS Code's
 side-by-side diff editor.
 
+> [!NOTE]
+> This is a vibe-coded project. The code is AI-sloppy. If you're not comfortable with that, then you should look for another extension.
+
 ## Views
 
 **Branch**
