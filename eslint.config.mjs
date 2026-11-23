@@ -19,6 +19,10 @@ export default tseslint.config(
 		languageOptions: { globals: globals.node },
 	},
 	{
+		files: ['media/**/*.js'],
+		languageOptions: { globals: { ...globals.browser, acquireVsCodeApi: 'readonly' }, sourceType: 'script' },
+	},
+	{
 		plugins: {
 			'@stylistic': stylistic
 		},

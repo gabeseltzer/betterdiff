@@ -52,6 +52,19 @@ suite('Better Diff in VS Code', () => {
 		assert.deepEqual((await api.views.commits.getChildren()).map(label), ['one a', 'one b', 'one c', 'two a', 'three a']);
 	});
 
+	test('the Commits view draws the graph of the stack, and opens a commit to its files', async () => {
+		await vscode.commands.executeCommand('betterdiff.commits.focus');
+		// five commits and the commit of origin/master they are stacked on
+		await until('the graph in the webview', () => api.graph.rendered?.rows === 6 && api.graph.rendered.files === 0);
+		// Next Commit starts the walk at the first commit: the graph opens it and shows its file
+		await vscode.commands.executeCommand('betterdiff.nextCommit');
+		await diffNamed('one.ts');
+		await until('the commit open in the graph', () => api.graph.rendered?.files === 1);
+		await vscode.commands.executeCommand('betterdiff.nextCommit');
+		await diffNamed('README.md');
+		await until('the next commit open as well', () => api.graph.rendered?.files === 2);
+	});
+
 	test('a file opens as a side-by-side diff of two revisions, and Next / Previous File walk the list', async () => {
 		const [, layer] = await api.views.stack.getChildren();
 		await vscode.commands.executeCommand('betterdiff.openFile', await fileIn(layer, 'src/b.ts', 'stack'));

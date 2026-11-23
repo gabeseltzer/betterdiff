@@ -4,14 +4,15 @@ import { ContentProvider, SCHEME } from './content';
 import { DiffOpener } from './diffOpener';
 import { type PullRequest, openPullRequests } from './git/github';
 import { tryRun } from './git/exec';
-import { WORKING_TREE } from './git/model';
+import { WORKING_TREE, checkoutBranch } from './git/model';
 import type { MoveIndex } from './moves/annotate';
 import { MoveDecorator } from './moves/decorator';
 import { MovesService } from './moves/service';
 import { Repositories } from './repo';
 import { type CommitNode, type ComparisonNode, type Direction, type FileNode, type Node, type Settings, stepOf } from './views/nodes';
+import { GraphView } from './views/graphView';
 import { DiffTreeProvider, StatusDecorations } from './views/provider';
-import { type RootContext, branchRoots, commitRoots, stackRoots } from './views/roots';
+import { type RootContext, branchRoots, commitGraph, commitRoots, stackRoots } from './views/roots';
 
 const PR_CACHE_MS = 5 * 60 * 1000;
 
@@ -29,6 +30,7 @@ function settings(): Settings {
 export interface Api {
 	/** for the integration tests */
 	readonly views: Record<'branch' | 'stack' | 'commits', DiffTreeProvider>;
+	readonly graph: GraphView;
 	readonly opener: DiffOpener;
 	readonly decorator: MoveDecorator;
 	refresh(): Promise<void>;
@@ -70,18 +72,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 		return hit.prs;
 	};
 
-	const rootsWith = (build: (ctx: RootContext) => Promise<Node[]>) => async (): Promise<Node[]> => {
+	const rootContext = (): RootContext | undefined => {
 		const git = repos.session();
 		const root = repos.active;
 		if (!git || !root) {
-			return [];
+			return undefined;
 		}
 		const resource = vscode.Uri.file(root);
-		return build({
+		return {
 			git, root, settings: settings(),
 			baseBranch: vscode.workspace.getConfiguration('betterdiff', resource).get('baseBranch', ''),
 			pullRequests: () => pullRequests(root),
-		});
+		};
+	};
+	const rootsWith = (build: (ctx: RootContext) => Promise<Node[]>) => async (): Promise<Node[]> => {
+		const ctx = rootContext();
+		return ctx ? build(ctx) : [];
 	};
 	const host = { settings, movesFor };
 	const providers = {
@@ -92,8 +98,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 	const views = {
 		branch: vscode.window.createTreeView('betterdiff.branch', { treeDataProvider: providers.branch, showCollapseAll: true }),
 		stack: vscode.window.createTreeView('betterdiff.stack', { treeDataProvider: providers.stack, showCollapseAll: true }),
-		commits: vscode.window.createTreeView('betterdiff.commits', { treeDataProvider: providers.commits, showCollapseAll: true }),
 	};
+	// The Commits view is a graph in a webview. Its commits are the `commits` provider's nodes,
+	// which Next / Previous walk like any other view's.
+	const graph = new GraphView(context.extensionUri, {
+		graph: async () => {
+			const ctx = rootContext();
+			return ctx && commitGraph(ctx);
+		},
+		provider: providers.commits,
+		settings,
+		movesFor,
+		open: (file) => opener.show(file, { preserveFocus: true }),
+	});
 	const viewKeys = Object.keys(providers) as (keyof typeof providers)[];
 
 	const refreshViews = () => {
@@ -101,6 +118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 		for (const key of viewKeys) {
 			providers[key].refresh();
 		}
+		graph.refresh();
 		const name = repos.active && repos.roots.length > 1 ? path.basename(repos.active) : undefined;
 		views.branch.description = name;
 	};
@@ -116,7 +134,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 	const open = async (node: FileNode, announceStep: boolean) => {
 		await opener.show(node);
 		const at = await current(node);
-		if (at && views[at.key].visible) {
+		if (at?.key === 'commits') {
+			graph.select(node);
+		} else if (at && views[at.key].visible) {
 			await Promise.resolve(views[at.key].reveal(at.node, { select: true, focus: false })).catch(() => { });
 		}
 		const step = announceStep ? stepOf(node) : undefined;
@@ -151,6 +171,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 
 	context.subscriptions.push(
 		repos, decorator, opener, ...Object.values(views),
+		vscode.window.registerWebviewViewProvider('betterdiff.commits', graph),
 		vscode.workspace.registerTextDocumentContentProvider(SCHEME, content),
 		vscode.window.registerFileDecorationProvider(new StatusDecorations()),
 		repos.onDidChange(refreshViews),
@@ -182,11 +203,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 		vscode.commands.registerCommand('betterdiff.toggleMoves', () => toggle('moves.enabled', [true, false])),
 		vscode.commands.registerCommand('betterdiff.goToMove', (...args: unknown[]) => opener.goToMove(...args)),
 		vscode.commands.registerCommand('betterdiff.compareMove', (...args: unknown[]) => opener.compareMove(...args)),
-		vscode.commands.registerCommand('betterdiff.copySha', (node: CommitNode) => vscode.env.clipboard.writeText(node.commit.sha)),
-		vscode.commands.registerCommand('betterdiff.openPullRequest', (node: ComparisonNode) => {
-			if (node.pr?.url) {
-				void vscode.env.openExternal(vscode.Uri.parse(node.pr.url));
+		// These take a tree node, or what the graph's context menu passes: { sha, branch, prUrl }.
+		vscode.commands.registerCommand('betterdiff.copySha', (node?: Partial<CommitNode> & { sha?: string }) => {
+			const sha = node?.commit?.sha ?? node?.sha;
+			return sha && vscode.env.clipboard.writeText(sha);
+		}),
+		vscode.commands.registerCommand('betterdiff.openPullRequest', (node?: Partial<ComparisonNode> & { prUrl?: string }) => {
+			const url = node?.pr?.url ?? node?.prUrl;
+			if (url) {
+				void vscode.env.openExternal(vscode.Uri.parse(url));
 			}
+		}),
+		vscode.commands.registerCommand('betterdiff.checkoutBranch', async (node?: Partial<ComparisonNode>) => {
+			const root = node?.root ?? repos.active;
+			if (!node?.branch || !root) {
+				return;
+			}
+			try {
+				await checkoutBranch(repos.git(root), node.branch);
+			} catch (e) {
+				void vscode.window.showErrorMessage(`Couldn't check out ${node.branch}: ${e instanceof Error ? e.message : String(e)}`);
+			}
+			// don't wait for the watcher on HEAD
+			repos.invalidate();
 		}),
 		vscode.commands.registerCommand('betterdiff.selectRepository', async () => {
 			const picked = await vscode.window.showQuickPick(repos.roots.map((root) => ({ label: path.basename(root), description: root, root })), { placeHolder: 'Repository to show in Better Diff' });
@@ -211,7 +250,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 	);
 
 	await repos.discover();
-	return { views: providers, opener, decorator, refresh: () => repos.discover() };
+	return { views: providers, graph, opener, decorator, refresh: () => repos.discover() };
 }
 
 export function deactivate(): void { }

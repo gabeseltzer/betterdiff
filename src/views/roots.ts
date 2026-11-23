@@ -1,9 +1,10 @@
 // The top-level nodes of the three views. No vscode import.
 import type { Git } from '../git/exec';
 import type { PullRequest } from '../git/github';
-import { WORKING_TREE, aheadBehind, baseBranch, branchRef, currentBranch, localStackParents, mergeBase, resolve, short, upstreamOf } from '../git/model';
-import { buildStack, mergeLinks } from '../stack';
-import { type ComparisonNode, type Node, type Settings, commitNodes, message, uncommittedNode } from './nodes';
+import { WORKING_TREE, aheadBehind, baseBranch, branchRef, commitComparison, currentBranch, graphLog, localStackParents, mergeBase, resolve, short, upstreamOf } from '../git/model';
+import { LANE_COLORS, type LaneColor } from '../lanes';
+import { type StackLayer, buildStack, mergeLinks } from '../stack';
+import { type CommitNode, type ComparisonNode, type MessageNode, type Node, type Settings, message, uncommittedNode } from './nodes';
 
 export interface RootContext {
 	git: Git;
@@ -86,29 +87,128 @@ export async function branchRoots(ctx: RootContext): Promise<Node[]> {
 	return nodes;
 }
 
-/** Commits view: the branch's commits since the merge base, to walk through one by one. */
-export async function commitRoots(ctx: RootContext): Promise<Node[]> {
+/** origin/master is the branch pull requests call master. */
+async function trunkName(git: Git, trunkRef: string): Promise<string> {
+	return await resolve(git, `refs/remotes/${trunkRef}`) ? trunkRef.slice(trunkRef.indexOf('/') + 1) : trunkRef;
+}
+
+/** The stack `branch` is in, bottom first, from open pull requests and from history. */
+async function stackOf(ctx: RootContext, branch: string, trunkRef: string, trunk: string): Promise<{ layers: StackLayer[]; prs?: PullRequest[] }> {
+	const [prs, fromGit] = await Promise.all([ctx.pullRequests(), localStackParents(ctx.git, branch, trunkRef, trunk)]);
+	return { layers: buildStack(branch, trunk, mergeLinks(fromGit, prs ?? [])), prs };
+}
+
+/** A branch name on a commit of the graph. */
+export interface GraphBadge {
+	label: string;
+	color: LaneColor;
+	/** the branch to check out; none for the base branch */
+	branch?: string;
+	current: boolean;
+	pr?: PullRequest;
+}
+
+export interface GraphRow {
+	/** the commit, or the uncommitted changes above HEAD */
+	node: CommitNode | ComparisonNode;
+	/** the commit; WORKING_TREE for the uncommitted changes */
+	sha: string;
+	/** the parents the graph draws lines to: none below a commit of the base branch */
+	parents: string[];
+	/** a commit of the base branch that the stack forks from: there for context, not a step */
+	boundary: boolean;
+	head: boolean;
+	badges: GraphBadge[];
+	/** said in place of the author */
+	note?: string;
+}
+
+export interface CommitGraph {
+	/** newest first: children before their parents */
+	rows: GraphRow[];
+	/** which color a branch's tip starts */
+	colors: Map<string, LaneColor>;
+	/** what to say when there is no graph to draw */
+	empty?: MessageNode[];
+}
+
+/**
+ * Commits view: every commit of the stack the current branch is in (of the branch alone, when
+ * nothing is stacked), as a graph down to where it forks from the base branch.
+ */
+export async function commitGraph(ctx: RootContext): Promise<CommitGraph> {
 	const { git, root, settings } = ctx;
+	const colors = new Map<string, LaneColor>();
 	const head = await headOf(ctx);
 	if (!head) {
-		return NO_COMMITS('commits');
+		return { rows: [], colors, empty: NO_COMMITS('commits') };
 	}
 	const base = await baseBranch(git, ctx.baseBranch);
-	const fork = base && await mergeBase(git, base, head.sha);
-	if (!base || !fork) {
-		return NO_BASE('commits');
+	if (!base || !await mergeBase(git, base, head.sha)) {
+		return { rows: [], colors, empty: NO_BASE('commits') };
 	}
-	const nodes: Node[] = await commitNodes(git, root, { base: fork, head: head.sha }, 'commits', settings);
+	const trunk = await trunkName(git, base);
+
+	const badges = new Map<string, GraphBadge[]>();
+	const badge = (sha: string, b: GraphBadge) => badges.set(sha, [...(badges.get(sha) ?? []), b]);
+	const tips = new Set([head.sha]);
+	colors.set(head.sha, 'ref');
+	if (head.branch && head.branch !== trunk) {
+		const { layers } = await stackOf(ctx, head.branch, base, trunk);
+		let rotating = 0;
+		for (const layer of [...layers].reverse()) {
+			const ref = layer.current ? head.branch : await branchRef(git, layer.branch);
+			const sha = ref && await resolve(git, ref);
+			if (!sha) {
+				continue; // a pull request's branch that isn't fetched
+			}
+			const color: LaneColor = layer.current ? 'ref' : rotating++ % LANE_COLORS;
+			tips.add(sha);
+			if (!colors.has(sha)) {
+				colors.set(sha, color);
+			}
+			badge(sha, { label: layer.branch, color, branch: layer.branch, current: layer.current, pr: layer.pr });
+		}
+	} else if (head.branch) {
+		badge(head.sha, { label: head.branch, color: 'ref', current: true });
+	}
+
+	const baseSha = await resolve(git, base);
+	const rows: GraphRow[] = (await graphLog(git, [...tips], base)).map((logged) => {
+		const { boundary, ...commit } = logged;
+		if (boundary) {
+			colors.set(commit.sha, 'base');
+			if (commit.sha === baseSha) {
+				badge(commit.sha, { label: base, color: 'base', current: false });
+			}
+		}
+		return {
+			node: { kind: 'commit', id: `commits/commit:${commit.sha}`, git, root, commit, cmp: commitComparison(commit) },
+			sha: commit.sha, parents: boundary ? [] : commit.parents, boundary, head: commit.sha === head.sha,
+			badges: badges.get(commit.sha) ?? [],
+			note: boundary && commit.sha !== baseSha ? `merge base with ${base}` : undefined,
+		};
+	});
+
 	const uncommitted = settings.includeWorkingTree ? await uncommittedNode(git, root, head.sha, head.branch ?? short(head.sha), 'commits') : undefined;
 	if (uncommitted) {
-		// the newest step of the walk
-		if (settings.commitsOrder === 'newestFirst') {
-			nodes.unshift(uncommitted);
-		} else {
-			nodes.push(uncommitted);
-		}
+		// the newest step of the walk: right above the commit it sits on
+		colors.set(WORKING_TREE, 'ref');
+		const at = Math.max(rows.findIndex((r) => r.head), 0);
+		rows.splice(at, 0, { node: uncommitted, sha: WORKING_TREE, parents: [head.sha], boundary: false, head: false, badges: [] });
 	}
-	return nodes.length ? nodes : [message('commits/empty', `No commits since ${base}`, { icon: 'info' })];
+	const steps = rows.some((r) => !r.boundary);
+	return { rows, colors, empty: steps ? undefined : [message('commits/empty', `No commits since ${base}`, { icon: 'info' })] };
+}
+
+/** The graph's commits as the steps Next / Previous Commit walk through, in the configured order. */
+export async function commitRoots(ctx: RootContext): Promise<Node[]> {
+	const graph = await commitGraph(ctx);
+	if (graph.empty) {
+		return graph.empty;
+	}
+	const steps = graph.rows.filter((r) => !r.boundary).map((r) => r.node);
+	return ctx.settings.commitsOrder === 'newestFirst' ? steps : steps.reverse();
 }
 
 /** Stack view: every branch of the stack against the branch below it, the top of the stack first. */
@@ -125,14 +225,12 @@ export async function stackRoots(ctx: RootContext): Promise<Node[]> {
 	if (!trunkRef) {
 		return NO_BASE('stack');
 	}
-	// origin/master is the branch pull requests call master
-	const trunk = await resolve(git, `refs/remotes/${trunkRef}`) ? trunkRef.slice(trunkRef.indexOf('/') + 1) : trunkRef;
+	const trunk = await trunkName(git, trunkRef);
 	if (head.branch === trunk) {
 		return [message('stack/trunk', `On ${trunk}: nothing is stacked below it`, { icon: 'info' })];
 	}
 
-	const [prs, fromGit] = await Promise.all([ctx.pullRequests(), localStackParents(git, head.branch, trunkRef, trunk)]);
-	const layers = buildStack(head.branch, trunk, mergeLinks(fromGit, prs ?? []));
+	const { layers, prs } = await stackOf(ctx, head.branch, trunkRef, trunk);
 
 	const nodes: Node[] = [];
 	for (const layer of [...layers].reverse()) {
@@ -163,8 +261,10 @@ export async function stackRoots(ctx: RootContext): Promise<Node[]> {
 				layer.source === 'git' ? 'Stacked according to git history' : 'Stacked according to its pull request',
 				behindParent && `${layer.parent} has commits ${layer.branch} doesn't: restack it`,
 			].filter(Boolean).join('\n'),
-			contextValue: layer.pr?.url ? 'betterdiff.layer.pr' : 'betterdiff.layer',
+			// what the context menu offers: no checkout of the branch we're on
+			contextValue: ['betterdiff.layer', layer.current && 'current', layer.pr?.url && 'pr'].filter(Boolean).join('.'),
 			pr: layer.pr,
+			branch: layer.branch,
 			commits: { base: fork, head: sha },
 			cmp: { base: fork, head: onDisk ? WORKING_TREE : sha, baseLabel: layer.parent, headLabel: onDisk ? 'working tree' : layer.branch },
 		};

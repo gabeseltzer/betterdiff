@@ -1,0 +1,164 @@
+/* The Commits view (src/views/graphView.ts): rows of 22px, like the Source Control Graph's. */
+html, body {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	color: var(--vscode-foreground);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size);
+	user-select: none;
+}
+
+#list {
+	min-height: 100%;
+	outline: none;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	height: 22px;
+	line-height: 22px;
+	padding-right: 8px;
+	gap: 6px;
+	cursor: pointer;
+	white-space: nowrap;
+	outline: none;
+}
+
+.row:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.row.selected {
+	background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+#list:focus-within .row.selected {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.row:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.row.boundary,
+.row.message {
+	cursor: default;
+}
+
+.row.message {
+	padding-left: 12px;
+}
+
+.row.message.link {
+	cursor: pointer;
+}
+
+.graph {
+	flex: none;
+}
+
+.subject,
+.name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 0 1 auto;
+	min-width: 3ch;
+}
+
+.row.boundary .subject,
+.row.uncommitted .subject {
+	font-style: italic;
+}
+
+.desc {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 1 1 0;
+	min-width: 0;
+	opacity: 0.7;
+	font-size: 0.9em;
+}
+
+.badges {
+	display: flex;
+	gap: 4px;
+	flex: none;
+	max-width: 60%;
+	overflow: hidden;
+}
+
+.badge {
+	box-sizing: border-box;
+	height: 18px;
+	line-height: 16px;
+	padding: 0 6px;
+	border: 1px solid var(--lane);
+	border-radius: 9px;
+	font-size: 0.85em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.badge.current {
+	background: var(--lane);
+	color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+	font-weight: 600;
+}
+
+.status {
+	flex: none;
+	width: 1.5ch;
+	text-align: center;
+	font-size: 0.9em;
+}
+
+/* lane colors: the Source Control Graph's own */
+.c-ref { --lane: var(--vscode-scmGraph-historyItemRefColor, #3794ff); }
+.c-base { --lane: var(--vscode-scmGraph-historyItemBaseRefColor, #d18616); }
+.c-0 { --lane: var(--vscode-scmGraph-foreground1, #ffb000); }
+.c-1 { --lane: var(--vscode-scmGraph-foreground2, #dc267f); }
+.c-2 { --lane: var(--vscode-scmGraph-foreground3, #994f00); }
+.c-3 { --lane: var(--vscode-scmGraph-foreground4, #40b0a6); }
+.c-4 { --lane: var(--vscode-scmGraph-foreground5, #b66dff); }
+
+.lane {
+	fill: none;
+	stroke: var(--lane);
+	stroke-width: 1px;
+	stroke-linecap: round;
+}
+
+.dot {
+	fill: var(--lane);
+	stroke: var(--lane);
+	stroke-width: 1px;
+}
+
+/* the hole in the checked-out commit's circle, and in a merge's */
+.hole {
+	fill: var(--vscode-sideBar-background, var(--vscode-editor-background));
+	stroke: none;
+}
+
+.dot.hollow {
+	fill: var(--vscode-sideBar-background, var(--vscode-editor-background));
+	stroke-dasharray: 2 2;
+}
+
+.s-A { color: var(--vscode-gitDecoration-addedResourceForeground); }
+.s-M, .s-T { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+.s-D { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+.s-R, .s-C { color: var(--vscode-gitDecoration-renamedResourceForeground); }
+.s-U { color: var(--vscode-gitDecoration-conflictingResourceForeground); }
+.s-untracked { color: var(--vscode-gitDecoration-untrackedResourceForeground); }
+
+#list:focus-within .row.selected .status {
+	color: inherit;
+}

@@ -1,11 +1,12 @@
 import * as assert from 'node:assert/strict';
 import { gitRunner, memoized } from '../../git/exec';
 import type { PullRequest } from '../../git/github';
-import { WORKING_TREE } from '../../git/model';
+import { WORKING_TREE, checkoutBranch, currentBranch } from '../../git/model';
 import { annotationAt, lineSpan, movedLineCount } from '../../moves/annotate';
 import { MovesService } from '../../moves/service';
 import { type ComparisonNode, type FileNode, type Node, type Settings, childrenOf, firstFile, locate, nextFile, nextStep } from '../../views/nodes';
-import { type RootContext, branchRoots, commitRoots, stackRoots } from '../../views/roots';
+import { type RowModel, graphRows } from '../../views/graph';
+import { type RootContext, branchRoots, commitGraph, commitRoots, stackRoots } from '../../views/roots';
 import { lines, stackedRepo } from '../repo';
 
 const TREE: Settings = { layout: 'tree', commitsOrder: 'oldestFirst', includeWorkingTree: false };
@@ -82,6 +83,42 @@ suite('views', function () {
 		assert.deepEqual((await commitRoots(context({ ...TREE, commitsOrder: 'newestFirst' }))).map(label), ['three a', 'two a', 'one c', 'one b', 'one a']);
 	});
 
+	test('Commits: the graph of the whole stack, down to where it forks from the base branch', async () => {
+		const line = (r: RowModel) => [r.subject, ...r.badges.map((b) => `[${b.label}${b.current ? '*' : ''}]`)].join(' ');
+		const rows = graphRows(await commitGraph(context(TREE)));
+		assert.deepEqual(rows.map(line), ['three a [feature-3*]', 'two a [feature-2]', 'one c [feature-1]', 'one b', 'one a', 'base [origin/master]']);
+		assert.deepEqual(rows.map((r) => r.kind), ['commit', 'commit', 'commit', 'commit', 'commit', 'boundary']);
+		// one lane, a color per branch of the stack
+		assert.deepEqual(rows.map((r) => [r.lanes.circle, r.lanes.columns, r.lanes.color]), [[0, 1, 'ref'], [0, 1, 0], [0, 1, 1], [0, 1, 1], [0, 1, 1], [0, 1, 'base']]);
+		assert.deepEqual(rows.map((r) => r.head), [true, false, false, false, false, false]);
+		assert.deepEqual(rows[1].badges[0].branch, 'feature-2');
+
+		// from the bottom of the stack, with a second branch on top of it and something uncommitted
+		repo.git('checkout', '-q', '-b', 'side', 'feature-1');
+		repo.commit('side a', { 'src/side.ts': lines('export const side = 1;') });
+		repo.git('checkout', '-q', 'feature-1');
+		repo.write({ 'src/wip.ts': lines('// not committed') });
+		try {
+			const ctx = context({ ...TREE, includeWorkingTree: true });
+			const forked = graphRows(await commitGraph(ctx));
+			assert.deepEqual(forked.map(line).sort(), ['Uncommitted changes', 'base [origin/master]', 'one a', 'one b', 'one c [feature-1*]', 'side a [side]', 'three a [feature-3]', 'two a [feature-2]']);
+			// every branch on top is drawn, in two lanes that meet at the branch they are stacked on
+			assert.equal(Math.max(...forked.map((r) => r.lanes.columns)), 3);
+			const at = forked.findIndex((r) => r.head);
+			assert.equal(forked[at].subject, 'one c');
+			assert.equal(forked[at].lanes.segments.filter((s) => s.kind === 'in').length, 3);
+			// what's uncommitted sits right above the commit it is on, and is the step after it
+			assert.equal(forked[at - 1].kind, 'uncommitted');
+			const steps = (await commitRoots(ctx)).map(label);
+			assert.equal(steps[steps.indexOf('one c') + 1], 'Uncommitted changes');
+			assert.deepEqual(steps.slice(0, 3), ['one a', 'one b', 'one c']);
+		} finally {
+			repo.write({ 'src/wip.ts': null });
+			repo.git('checkout', '-q', 'feature-3');
+			repo.git('branch', '-q', '-D', 'side');
+		}
+	});
+
 	test('Stack: each branch against the one below, top first, from history', async () => {
 		const roots = await stackRoots(context(TREE)) as ComparisonNode[];
 		assert.deepEqual(roots.map((r) => `${r.label} ${r.description}`), ['feature-3 ← feature-2', 'feature-2 ← feature-1', 'feature-1 ← master']);
@@ -108,7 +145,9 @@ suite('views', function () {
 		try {
 			const roots = await stackRoots(context(TREE, [pr(1, 'feature-1', 'master'), pr(2, 'feature-2', 'feature-1'), pr(3, 'feature-3', 'feature-2')])) as ComparisonNode[];
 			assert.deepEqual(roots.map((r) => `${r.label} ${r.description}`), ['feature-3 ← feature-2 · #3', 'feature-2 ← feature-1 · #2 · draft · behind parent', 'feature-1 ← master · #1']);
-			assert.equal(roots[0].contextValue, 'betterdiff.layer.pr');
+			// the context menu: Checkout Branch on every layer but the one we're on
+			assert.deepEqual(roots.map((r) => r.contextValue), ['betterdiff.layer.current.pr', 'betterdiff.layer.pr', 'betterdiff.layer.pr']);
+			assert.deepEqual(roots.map((r) => r.branch), ['feature-3', 'feature-2', 'feature-1']);
 			// still only feature-2's own change
 			await childrenOf(roots[1], TREE);
 			assert.deepEqual(roots[1].files!.map((f) => f.change.path), ['src/a.ts', 'src/b.ts']);
@@ -117,6 +156,20 @@ suite('views', function () {
 			assert.equal(`${label(withMissing[0])} ${(withMissing[0] as ComparisonNode).description}`, "feature-4 ← feature-3 · feature-4 isn't fetched");
 		} finally {
 			repo.git('branch', '-q', '-f', 'feature-1', 'feature-1~1');
+		}
+	});
+
+	test('Stack: a layer checks out its branch, and the stack stays the same', async () => {
+		const [, middle] = await stackRoots(context(TREE)) as ComparisonNode[];
+		assert.equal(middle.contextValue, 'betterdiff.layer');
+		await checkoutBranch(gitRunner(repo.dir), middle.branch!);
+		try {
+			assert.equal(await currentBranch(gitRunner(repo.dir)), 'feature-2');
+			const roots = await stackRoots(context(TREE)) as ComparisonNode[];
+			assert.deepEqual(roots.map((r) => `${r.label} ${r.contextValue}`), ['feature-3 betterdiff.layer', 'feature-2 betterdiff.layer.current', 'feature-1 betterdiff.layer']);
+			await assert.rejects(checkoutBranch(gitRunner(repo.dir), 'no-such-branch'), /no-such-branch/);
+		} finally {
+			repo.git('checkout', '-q', 'feature-3');
 		}
 	});
 

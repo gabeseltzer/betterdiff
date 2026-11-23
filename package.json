@@ -8,6 +8,10 @@
 		"name": "Gabriel Seltzer"
 	},
 	"license": "GPL-3.0-or-later",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/gabeseltzer/betterdiff.git"
+	},
 	"engines": {
 		"vscode": "^1.100.0"
 	},
@@ -49,6 +53,7 @@
 				{
 					"id": "betterdiff.commits",
 					"name": "Commits",
+					"type": "webview",
 					"icon": "media/betterdiff.svg"
 				}
 			]
@@ -154,6 +159,12 @@
 				"title": "Open Pull Request",
 				"category": "Better Diff",
 				"icon": "$(github)"
+			},
+			{
+				"command": "betterdiff.checkoutBranch",
+				"title": "Checkout Branch",
+				"category": "Better Diff",
+				"icon": "$(git-branch)"
 			}
 		],
 		"menus": {
@@ -172,6 +183,10 @@
 				},
 				{
 					"command": "betterdiff.openPullRequest",
+					"when": "false"
+				},
+				{
+					"command": "betterdiff.checkoutBranch",
 					"when": "false"
 				},
 				{
@@ -207,7 +222,7 @@
 				},
 				{
 					"command": "betterdiff.toggleFileLayout",
-					"when": "view =~ /^betterdiff\\./",
+					"when": "view == betterdiff.branch || view == betterdiff.stack",
 					"group": "navigation@8"
 				},
 				{
@@ -254,8 +269,35 @@
 				},
 				{
 					"command": "betterdiff.openPullRequest",
-					"when": "view =~ /^betterdiff\\./ && viewItem == betterdiff.layer.pr",
+					"when": "view =~ /^betterdiff\\./ && viewItem =~ /^betterdiff\\.layer\\..*pr$/",
 					"group": "inline"
+				},
+				{
+					"command": "betterdiff.checkoutBranch",
+					"when": "view == betterdiff.stack && viewItem =~ /^betterdiff\\.layer(\\.pr)?$/",
+					"group": "1_branch@1"
+				},
+				{
+					"command": "betterdiff.openPullRequest",
+					"when": "view == betterdiff.stack && viewItem =~ /^betterdiff\\.layer\\..*pr$/",
+					"group": "2_pr@1"
+				}
+			],
+			"webview/context": [
+				{
+					"command": "betterdiff.checkoutBranch",
+					"when": "webviewId == 'betterdiff.commits' && webviewSection == 'ref' && betterdiffRef == 'other'",
+					"group": "1_branch@1"
+				},
+				{
+					"command": "betterdiff.openPullRequest",
+					"when": "webviewId == 'betterdiff.commits' && webviewSection == 'ref' && betterdiffPr",
+					"group": "2_pr@1"
+				},
+				{
+					"command": "betterdiff.copySha",
+					"when": "webviewId == 'betterdiff.commits' && betterdiffSha",
+					"group": "9_copy@1"
 				}
 			],
 			"editor/title": [
@@ -355,7 +397,7 @@
 						"newestFirst"
 					],
 					"default": "oldestFirst",
-					"markdownDescription": "The order of commits in the Commits view. Oldest first is the order to walk a branch in."
+					"markdownDescription": "The order Next / Previous Commit walk the commits in, and the order of the commits listed under a branch in the Stack view. Oldest first is the order to walk a branch in. The Commits view always draws its graph newest first."
 				},
 				"betterdiff.stack.useGitHubCli": {
 					"type": "boolean",

@@ -2,12 +2,12 @@
 import * as vscode from 'vscode';
 import { type MoveIndex, movedLineCount } from '../moves/annotate';
 import type { FileChange, Status } from '../git/model';
-import { type CommitNode, type ComparisonNode, type Direction, type FileNode, type Node, type Settings, childrenOf, firstFile, locate, message, nextFile, nextStep } from './nodes';
+import { type CommitNode, type ComparisonNode, type Direction, type FileNode, type Node, type Settings, ago, childrenOf, firstFile, locate, message, nextFile, nextStep } from './nodes';
 
 /** File rows get their status letter and color from this scheme, not from the file on disk. */
 export const STATUS_SCHEME = 'betterdiff-status';
 
-const STATUS: Record<Status, { letter: string; color: string; text: string }> = {
+export const STATUS: Record<Status, { letter: string; color: string; text: string }> = {
 	'A': { letter: 'A', color: 'gitDecoration.addedResourceForeground', text: 'Added' },
 	'M': { letter: 'M', color: 'gitDecoration.modifiedResourceForeground', text: 'Modified' },
 	'D': { letter: 'D', color: 'gitDecoration.deletedResourceForeground', text: 'Deleted' },
@@ -158,7 +158,8 @@ export class DiffTreeProvider implements vscode.TreeDataProvider<Node> {
 	}
 }
 
-function describe(change: FileChange, moves: MoveIndex | undefined): string {
+/** What a file row says after its name: where it was renamed from, its size, what only moved. */
+export function describe(change: FileChange, moves: MoveIndex | undefined): string {
 	const parts: string[] = [];
 	if (change.oldPath) {
 		parts.push(`← ${change.oldPath.slice(change.oldPath.lastIndexOf('/') + 1)}`);
@@ -173,15 +174,4 @@ function describe(change: FileChange, moves: MoveIndex | undefined): string {
 		parts.push(`⇄ ${moved} moved`);
 	}
 	return parts.join(' ');
-}
-
-function ago(iso: string): string {
-	const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-	const units: [number, string][] = [[365 * 86400, 'y'], [30 * 86400, 'mo'], [86400, 'd'], [3600, 'h'], [60, 'm']];
-	for (const [size, unit] of units) {
-		if (seconds >= size) {
-			return `${Math.floor(seconds / size)}${unit} ago`;
-		}
-	}
-	return 'just now';
 }

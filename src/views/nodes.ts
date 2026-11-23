@@ -43,6 +43,8 @@ export interface ComparisonNode extends Owner {
 	/** list this range's commits in a group above the files */
 	commits?: { base: string; head: string };
 	pr?: PullRequest;
+	/** the branch this is a stack layer of */
+	branch?: string;
 	/** Next / Previous File stay inside it */
 	scope?: boolean;
 }
@@ -252,4 +254,16 @@ export async function nextStep(from: Node, dir: Direction, roots: () => Promise<
 		}
 	}
 	return undefined;
+}
+
+/** How long ago, as "3d ago". */
+export function ago(iso: string): string {
+	const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+	const units: [number, string][] = [[365 * 86400, 'y'], [30 * 86400, 'mo'], [86400, 'd'], [3600, 'h'], [60, 'm']];
+	for (const [size, unit] of units) {
+		if (seconds >= size) {
+			return `${Math.floor(seconds / size)}${unit} ago`;
+		}
+	}
+	return 'just now';
 }

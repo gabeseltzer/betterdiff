@@ -18,10 +18,15 @@ side-by-side diff editor.
 **Stack**: the stacked branches the current branch is part of, top first. Each one expands to its
 own changes against the branch below it, and to its commits. The stack comes from open pull
 requests (`gh pr list`: a pull request's base is the branch below it) and, for branches without
-one, from git history. A branch whose parent has moved on is marked `behind parent`.
+one, from git history. A branch whose parent has moved on is marked `behind parent`. Right-click a
+branch to check it out.
 
-**Commits**: the branch's commits, oldest first, each expanding to the files it changed. Nothing
-is checked out; both sides come from `git show`.
+**Commits**: a commit graph in the manner of VS Code's Source Control Graph, showing just the stack
+the current branch is in: every stacked branch's commits, newest first, down to the commit of the
+base branch they fork from, with each branch named at its tip. Click a commit to list the files it
+changed, and a file to open its diff. Right-click a branch name to check it out or open its pull
+request, and a commit to copy its SHA. Nothing is checked out to show a diff; both sides come from
+`git show`.
 
 Click a file to open its diff. With **Toggle Uncommitted Changes** on (the default), the right
 side is the real file on disk, so you can edit it in the diff.
@@ -31,7 +36,7 @@ side is the real file on disk, so you can edit it in the diff.
 | Command | Key | |
 |---|---|---|
 | Next File / Previous File | `Alt+J` / `Alt+K` | Through the list the diff was opened from. In Commits, the last file of a commit leads to the first of the next. |
-| Next Commit / Previous Commit | `Alt+Shift+J` / `Alt+Shift+K` | To the first file of the next commit. With no diff open, starts at the branch's first commit. |
+| Next Commit / Previous Commit | `Alt+Shift+J` / `Alt+Shift+K` | To the first file of the next commit. With no diff open, starts at the stack's first commit. |
 
 ## Moved code
 
@@ -52,7 +57,7 @@ Colors: `betterdiff.movedBackground`, `betterdiff.movedAlternateBackground`,
 | `betterdiff.baseBranch` | detect | Branch to compare with. Detection: the remote's default branch, then `origin/master`, `origin/main`, `master`, `main`. |
 | `betterdiff.includeWorkingTree` | `true` | Compare with the files on disk instead of the last commit. |
 | `betterdiff.fileLayout` | `tree` | `tree` or `list`. |
-| `betterdiff.commits.order` | `oldestFirst` | |
+| `betterdiff.commits.order` | `oldestFirst` | The order Next / Previous Commit walk in. The graph is always newest first. |
 | `betterdiff.stack.useGitHubCli` | `true` | Build the stack from open pull requests. |
 | `betterdiff.moves.enabled` | `true` | |
 | `betterdiff.moves.minLines` / `minCharacters` / `bridgeLines` | 3 / 20 / 2 | What counts as a moved block. |

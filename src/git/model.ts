@@ -173,6 +173,24 @@ export async function commitsBetween(git: Git, base: string, head: string): Prom
 	});
 }
 
+export interface LoggedCommit extends Commit {
+	/** not one of the commits asked for: where they fork from what was excluded */
+	boundary: boolean;
+}
+
+/**
+ * The commits `tips` reach and `exclude` doesn't, children before parents, followed by the
+ * commits of `exclude` they fork from. At most `limit` of them.
+ */
+export async function graphLog(git: Git, tips: readonly string[], exclude: string, limit = 500): Promise<LoggedCommit[]> {
+	const format = ['%m', '%H', '%h', '%an', '%aI', '%s', '%P'].join(FIELD) + RECORD;
+	const out = await git.run(['log', '--topo-order', '--boundary', `--max-count=${limit}`, `--format=${format}`, ...tips, '--not', exclude, '--']);
+	return out.split(RECORD).map((r) => r.trim()).filter(Boolean).map((r) => {
+		const [mark, sha, shortSha, author, date, subject, parents] = r.split(FIELD);
+		return { sha, short: shortSha, author, date, subject, parents: parents ? parents.split(' ') : [], boundary: mark === '-' };
+	});
+}
+
 /** What one commit changed: itself against its first parent (the empty tree for a root commit). */
 export function commitComparison(c: Commit): Comparison {
 	const parent = c.parents[0];
@@ -201,6 +219,15 @@ export async function localBranches(git: Git, ...filters: string[]): Promise<Bra
 		const [name, sha] = l.split('\t');
 		return { name, sha };
 	});
+}
+
+/**
+ * Checks out `branch`. A branch that is only on the remote gets a local one tracking it. Rejects
+ * with git's message when it can't (uncommitted changes in the way, say).
+ */
+export async function checkoutBranch(git: Git, branch: string): Promise<void> {
+	// switch, not checkout: it never takes the name for a path
+	await git.run(['switch', '--quiet', branch]);
 }
 
 /** The local branch `name`, else the same branch on origin; undefined when neither exists. */
