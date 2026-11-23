@@ -82,4 +82,4 @@ Decisions:
 - Multi-root: the views show one repository at a time (Select Repository…); submodules and
   worktrees of other repositories aren't discovered.
 - Encoding: file contents are read as UTF-8.
-- CI workflow, icon, Marketplace metadata, LICENSE.
+- CI workflow, icon, Marketplace metadata.

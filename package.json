@@ -7,6 +7,7 @@
 	"author": {
 		"name": "Gabriel Seltzer"
 	},
+	"license": "GPL-3.0-or-later",
 	"engines": {
 		"vscode": "^1.100.0"
 	},
