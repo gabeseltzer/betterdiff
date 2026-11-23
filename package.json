@@ -1,0 +1,415 @@
+{
+	"name": "betterdiff",
+	"displayName": "Better Diff",
+	"description": "A sidebar for branch, upstream, stacked-branch and commit-by-commit diffs, opened one file at a time side by side, with moved code dimmed.",
+	"version": "0.0.1",
+	"publisher": "gabeseltzer",
+	"author": {
+		"name": "Gabriel Seltzer"
+	},
+	"engines": {
+		"vscode": "^1.100.0"
+	},
+	"categories": [
+		"SCM Providers",
+		"Other"
+	],
+	"keywords": [
+		"git",
+		"diff",
+		"stacked",
+		"pull request",
+		"moved code"
+	],
+	"activationEvents": [],
+	"main": "./out/extension.js",
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "betterdiff",
+					"title": "Better Diff",
+					"icon": "media/betterdiff.svg"
+				}
+			]
+		},
+		"views": {
+			"betterdiff": [
+				{
+					"id": "betterdiff.branch",
+					"name": "Branch",
+					"icon": "media/betterdiff.svg"
+				},
+				{
+					"id": "betterdiff.stack",
+					"name": "Stack",
+					"icon": "media/betterdiff.svg"
+				},
+				{
+					"id": "betterdiff.commits",
+					"name": "Commits",
+					"icon": "media/betterdiff.svg"
+				}
+			]
+		},
+		"viewsWelcome": [
+			{
+				"view": "betterdiff.branch",
+				"contents": "No git repository found in this workspace.\n[Refresh](command:betterdiff.refresh)",
+				"when": "betterdiff.noRepository"
+			}
+		],
+		"commands": [
+			{
+				"command": "betterdiff.refresh",
+				"title": "Refresh",
+				"category": "Better Diff",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "betterdiff.toggleFileLayout",
+				"title": "Toggle File Layout (Tree / List)",
+				"category": "Better Diff",
+				"icon": "$(list-tree)"
+			},
+			{
+				"command": "betterdiff.toggleWorkingTree",
+				"title": "Toggle Uncommitted Changes",
+				"category": "Better Diff",
+				"icon": "$(edit)"
+			},
+			{
+				"command": "betterdiff.setBaseBranch",
+				"title": "Set Base Branch…",
+				"category": "Better Diff",
+				"icon": "$(git-merge)"
+			},
+			{
+				"command": "betterdiff.selectRepository",
+				"title": "Select Repository…",
+				"category": "Better Diff",
+				"icon": "$(repo)"
+			},
+			{
+				"command": "betterdiff.openFile",
+				"title": "Open Changes",
+				"category": "Better Diff",
+				"icon": "$(diff)"
+			},
+			{
+				"command": "betterdiff.openWorkingFile",
+				"title": "Open File",
+				"category": "Better Diff",
+				"icon": "$(go-to-file)"
+			},
+			{
+				"command": "betterdiff.nextFile",
+				"title": "Next File",
+				"category": "Better Diff",
+				"icon": "$(arrow-down)"
+			},
+			{
+				"command": "betterdiff.previousFile",
+				"title": "Previous File",
+				"category": "Better Diff",
+				"icon": "$(arrow-up)"
+			},
+			{
+				"command": "betterdiff.nextCommit",
+				"title": "Next Commit",
+				"category": "Better Diff",
+				"icon": "$(debug-step-over)"
+			},
+			{
+				"command": "betterdiff.previousCommit",
+				"title": "Previous Commit",
+				"category": "Better Diff",
+				"icon": "$(debug-step-back)"
+			},
+			{
+				"command": "betterdiff.toggleMoves",
+				"title": "Toggle Moved Code Highlighting",
+				"category": "Better Diff",
+				"icon": "$(move)"
+			},
+			{
+				"command": "betterdiff.goToMove",
+				"title": "Go to Other Side of Move",
+				"category": "Better Diff"
+			},
+			{
+				"command": "betterdiff.compareMove",
+				"title": "Compare Moved Block with Its Source",
+				"category": "Better Diff"
+			},
+			{
+				"command": "betterdiff.copySha",
+				"title": "Copy Commit SHA",
+				"category": "Better Diff",
+				"icon": "$(copy)"
+			},
+			{
+				"command": "betterdiff.openPullRequest",
+				"title": "Open Pull Request",
+				"category": "Better Diff",
+				"icon": "$(github)"
+			}
+		],
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "betterdiff.openFile",
+					"when": "false"
+				},
+				{
+					"command": "betterdiff.openWorkingFile",
+					"when": "false"
+				},
+				{
+					"command": "betterdiff.copySha",
+					"when": "false"
+				},
+				{
+					"command": "betterdiff.openPullRequest",
+					"when": "false"
+				},
+				{
+					"command": "betterdiff.nextFile",
+					"when": "betterdiff.diffActive"
+				},
+				{
+					"command": "betterdiff.previousFile",
+					"when": "betterdiff.diffActive"
+				},
+				{
+					"command": "betterdiff.nextCommit",
+					"when": "betterdiff.diffActive"
+				},
+				{
+					"command": "betterdiff.previousCommit",
+					"when": "betterdiff.diffActive"
+				},
+				{
+					"command": "betterdiff.goToMove",
+					"when": "betterdiff.diffActive"
+				},
+				{
+					"command": "betterdiff.compareMove",
+					"when": "betterdiff.diffActive"
+				}
+			],
+			"view/title": [
+				{
+					"command": "betterdiff.refresh",
+					"when": "view =~ /^betterdiff\\./",
+					"group": "navigation@9"
+				},
+				{
+					"command": "betterdiff.toggleFileLayout",
+					"when": "view =~ /^betterdiff\\./",
+					"group": "navigation@8"
+				},
+				{
+					"command": "betterdiff.toggleWorkingTree",
+					"when": "view == betterdiff.branch",
+					"group": "navigation@1"
+				},
+				{
+					"command": "betterdiff.setBaseBranch",
+					"when": "view == betterdiff.branch",
+					"group": "navigation@2"
+				},
+				{
+					"command": "betterdiff.previousCommit",
+					"when": "view == betterdiff.commits",
+					"group": "navigation@1"
+				},
+				{
+					"command": "betterdiff.nextCommit",
+					"when": "view == betterdiff.commits",
+					"group": "navigation@2"
+				},
+				{
+					"command": "betterdiff.selectRepository",
+					"when": "view == betterdiff.branch && betterdiff.multipleRepositories",
+					"group": "1_repo"
+				},
+				{
+					"command": "betterdiff.toggleMoves",
+					"when": "view == betterdiff.branch",
+					"group": "2_moves"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "betterdiff.openWorkingFile",
+					"when": "view =~ /^betterdiff\\./ && viewItem == betterdiff.file",
+					"group": "inline"
+				},
+				{
+					"command": "betterdiff.copySha",
+					"when": "view =~ /^betterdiff\\./ && viewItem == betterdiff.commit",
+					"group": "inline"
+				},
+				{
+					"command": "betterdiff.openPullRequest",
+					"when": "view =~ /^betterdiff\\./ && viewItem == betterdiff.layer.pr",
+					"group": "inline"
+				}
+			],
+			"editor/title": [
+				{
+					"command": "betterdiff.previousFile",
+					"when": "betterdiff.diffActive",
+					"group": "navigation@-21"
+				},
+				{
+					"command": "betterdiff.nextFile",
+					"when": "betterdiff.diffActive",
+					"group": "navigation@-20"
+				}
+			]
+		},
+		"keybindings": [
+			{
+				"command": "betterdiff.nextFile",
+				"key": "alt+j",
+				"when": "betterdiff.diffActive"
+			},
+			{
+				"command": "betterdiff.previousFile",
+				"key": "alt+k",
+				"when": "betterdiff.diffActive"
+			},
+			{
+				"command": "betterdiff.nextCommit",
+				"key": "alt+shift+j",
+				"when": "betterdiff.diffActive"
+			},
+			{
+				"command": "betterdiff.previousCommit",
+				"key": "alt+shift+k",
+				"when": "betterdiff.diffActive"
+			}
+		],
+		"colors": [
+			{
+				"id": "betterdiff.movedBackground",
+				"description": "Background of lines that moved unchanged (the first of the two alternating colors).",
+				"defaults": {
+					"dark": "#4b6fb555",
+					"light": "#5a82d040",
+					"highContrast": "#4b6fb588",
+					"highContrastLight": "#5a82d066"
+				}
+			},
+			{
+				"id": "betterdiff.movedAlternateBackground",
+				"description": "Background of lines that moved unchanged, for every other moved block.",
+				"defaults": {
+					"dark": "#8a63b555",
+					"light": "#9a6fd040",
+					"highContrast": "#8a63b588",
+					"highContrastLight": "#9a6fd066"
+				}
+			},
+			{
+				"id": "betterdiff.movedLabelForeground",
+				"description": "Color of the moved-from / moved-to label at the end of a moved block's first line.",
+				"defaults": {
+					"dark": "#9db4e0",
+					"light": "#3b5a9c",
+					"highContrast": "#c8d8ff",
+					"highContrastLight": "#1f3a78"
+				}
+			}
+		],
+		"configuration": {
+			"title": "Better Diff",
+			"properties": {
+				"betterdiff.baseBranch": {
+					"type": "string",
+					"default": "",
+					"scope": "resource",
+					"markdownDescription": "The branch the current branch is compared with at their merge base, e.g. `origin/master`. Empty: the remote's default branch, then `origin/master`, `origin/main`, `master`, `main`."
+				},
+				"betterdiff.includeWorkingTree": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Compare with the files on disk (uncommitted changes included, and editable on the right side) instead of with the branch's last commit."
+				},
+				"betterdiff.fileLayout": {
+					"type": "string",
+					"enum": [
+						"tree",
+						"list"
+					],
+					"default": "tree",
+					"markdownDescription": "Show changed files as a folder tree or as a flat list."
+				},
+				"betterdiff.commits.order": {
+					"type": "string",
+					"enum": [
+						"oldestFirst",
+						"newestFirst"
+					],
+					"default": "oldestFirst",
+					"markdownDescription": "The order of commits in the Commits view. Oldest first is the order to walk a branch in."
+				},
+				"betterdiff.stack.useGitHubCli": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Ask the GitHub CLI (`gh pr list`) for open pull requests and build the stack from their base branches. Without it (or without `gh`), the stack comes from which local branches contain which."
+				},
+				"betterdiff.moves.enabled": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Dim code that only moved (like `git diff --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change`), within a file and between files."
+				},
+				"betterdiff.moves.minLines": {
+					"type": "integer",
+					"default": 3,
+					"minimum": 1,
+					"markdownDescription": "A moved block has at least this many matching lines."
+				},
+				"betterdiff.moves.minCharacters": {
+					"type": "integer",
+					"default": 20,
+					"minimum": 1,
+					"markdownDescription": "A moved block's matching lines have at least this many letters and digits (git's `--color-moved` uses 20)."
+				},
+				"betterdiff.moves.bridgeLines": {
+					"type": "integer",
+					"default": 2,
+					"minimum": 0,
+					"markdownDescription": "How many changed lines in a row a moved block may contain. Those lines keep their normal diff colors."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"watch": "tsc -watch -p ./",
+		"lint": "eslint",
+		"test": "npm run compile && mocha",
+		"test:unit": "npm run compile && mocha",
+		"test:integration": "npm run compile && vscode-test",
+		"package": "vsce package"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/mocha": "^10.0.10",
+		"@types/node": "^22",
+		"@types/vscode": "^1.100.0",
+		"@vscode/test-cli": "^0.0.11",
+		"@vscode/test-electron": "^2.5.2",
+		"@vscode/vsce": "^3.6.0",
+		"eslint": "^9.13.0",
+		"globals": "^14.0.0",
+		"mocha": "^11.1.0",
+		"typescript": "^5.8.2",
+		"typescript-eslint": "^8.26.0"
+	}
+}
